@@ -1,0 +1,228 @@
+---
+title: "Prediction mode"
+author: "K A Venkatesh"
+date: "5/25/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Prediction Assignment 
+This purpose of this assignment is to test the understanding the applicability of various machine learning algorithms.
+
+### Overview
+We are expected to predict the manner in which 6 participants performed some exercise as described below. This is the “classe” variable in the training set. This report talks about the model buliding the cross validation of the model and how we finalized the right one to predict
+
+
+As ususl, obtaining the data and understanding the data then cleaning the data. Then apply the exploratory data anlysis on the data set. 
+
+** About the dataset **
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset)
+
+Dataset is given as two types: 
+The training data for this project are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here:
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+A short description of the datasets content from the authors’ website:
+“Six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E).
+Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. Participants were supervised by an experienced weight lifter to make sure the execution complied to the manner they were supposed to simulate. The exercises were performed by six male participants aged between 20-28 years, with little weight lifting experience. We made sure that all participants could easily simulate the mistakes in a safe and controlled manner by using a relatively light dumbbell (1.25kg)."
+
+### Loading the necessary Packages 
+```{r}
+library(corrplot)
+library(ggplot2)
+library(lattice)
+library(rattle)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+library(caret)
+library(e1071)
+library(gbm)
+
+```
+
+### Fetching the data 
+
+
+```{r}
+UrlTr <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+UrlTe  <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+train <- read.csv(url(UrlTr))
+test <- read.csv(url(UrlTe))
+
+dim(train)
+dim(test)
+names(train)
+names(test)
+
+```
+** Looking for the factor variables
+```{r}
+
+names(Filter(is.factor, train))
+```
+
+
+37 factor variables are there in the dataset
+
+** Spliting the dataset inro trainin and testdata for our models
+```{r}
+
+inTrain  <- createDataPartition(train$classe, p=0.7, list=FALSE)
+TrainSet <- train[inTrain, ]
+TestSet  <- train[-inTrain, ]
+dim(TrainSet)
+dim(TestSet)
+names(TrainSet)
+names(TestSet)
+
+```
+
+** Next Job is dealing with missing values of both NA and no values**
+Using nearzerovar() function can be applied. The Near Zero variance (NZV) variables are also removed and the ID variables as well.
+
+
+```{r}
+NZV <- nearZeroVar(TrainSet)
+TrainSet <- TrainSet[, -NZV]
+TestSet  <- TestSet[, -NZV]
+dim(TrainSet)
+dim(TestSet)
+```
+
+
+Now we remove the coulmns wher NA values more than 95% of the time
+
+```{r}
+AllNA    <- sapply(TrainSet, function(x) mean(is.na(x))) > 0.95
+TrainSet <- TrainSet[, AllNA==FALSE]
+TestSet  <- TestSet[, AllNA==FALSE]
+dim(TrainSet)
+
+```
+
+
+
+** Removing the columns(unnecessarry variable) that do not contribute much such as nuer_name, timestamp, new window
+
+
+```{r}
+TrainSet <- TrainSet[, -(1:5)]
+TestSet  <- TestSet[, -(1:5)]
+dim(TrainSet)
+dim(TestSet)
+
+
+```
+After cleaning the dataset, both train and test dataset has 54 coulmns.
+
+** We will identify the linear relationship among the variables using correlation **
+
+```{r}
+M <- cor(TrainSet[, -54])
+corrplot(M, order = "FPC", method = "pie", 
+         tl.cex = 0.8, tl.col = rgb(0, 0, 0))
+
+
+```
+
+
+### Machine learning Algortihms- Model Building and Validataion
+Model Building
+
+#### Random Forest
+```{r}
+
+set.seed(12000)
+controlRF <- trainControl(method="cv", number=3, verboseIter=FALSE)
+modFitRandForest <- train(classe ~ ., data=TrainSet, method="rf",
+                          trControl=controlRF)
+modFitRandForest$finalModel
+
+```
+
+```{r}
+predictRandForest <- predict(modFitRandForest, newdata=TestSet)
+confMatRandForest <- confusionMatrix(predictRandForest, TestSet$classe)
+confMatRandForest
+
+```
+
+
+```{r}
+plot(confMatRandForest$table, col = confMatRandForest$byClass, 
+     main = paste("Random Forest - Accuracy =",
+     round(confMatRandForest$overall['Accuracy'], 4)))
+
+```
+
+#### Decision Tree
+
+
+```{r}
+set.seed(12345)
+modFitDecTree <- rpart(classe ~ ., data=TrainSet, method="class")
+fancyRpartPlot(modFitDecTree)
+
+
+```
+
+```{r}
+predictDecTree <- predict(modFitDecTree, newdata=TestSet, type="class")
+confMatDecTree <- confusionMatrix(predictDecTree, TestSet$classe)
+confMatDecTree
+
+```
+
+
+
+```{r}
+plot(confMatDecTree$table, col = confMatDecTree$byClass, 
+     main = paste("Decision Tree - Accuracy =",
+                  round(confMatDecTree$overall['Accuracy'], 4)))
+```
+
+
+#### Generalized Boost Method
+```{r}
+set.seed(12345)
+controlGBM <- trainControl(method = "repeatedcv", number = 5, repeats = 1)
+modFitGBM  <- train(classe ~ ., data=TrainSet, method = "gbm",
+                    trControl = controlGBM, verbose = FALSE)
+modFitGBM$finalModel
+
+
+```
+
+```{r}
+predictGBM <- predict(modFitGBM, newdata=TestSet)
+confMatGBM <- confusionMatrix(predictGBM, TestSet$classe)
+confMatGBM
+```
+
+
+```{r}
+plot(confMatGBM$table, col = confMatGBM$byClass, 
+     main = paste("GBM - Accuracy =", round(confMatGBM$overall['Accuracy'], 4)))
+```
+
+#### Comparsion of the models and Prediction on the test data
+By comparing the accuracy value of all three models, Random forest is the best one in this scenario. Hence we apply random forest model on the test dataset to predict 
+
+```{r}
+predictTEST <- predict(modFitRandForest, newdata=test)
+predictTEST
+```
+#### Conclusion
+Based on the accurray of the models, we finalized that random forest model is the most appropriate one in this scenario and we applied the random forest model to predict on the test data.
+
+
+
+## R Markdown
+
+
